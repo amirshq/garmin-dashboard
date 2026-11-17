@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Template: `make install-schedule` fills in __ROOT__/__UV__/__LABEL__ and installs to ~/Library/LaunchAgents -->
+<!-- Template: `make install-schedule` fills in __ROOT__/__UV__/__LABEL__ and installs to ~/Library/LaunchAgents.
+     Runs `make daily`: incremental sync, then the encrypted GitHub Pages snapshot (skipped if SNAPSHOT_PASSWORD is unset) -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>__LABEL__</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__UV__</string>
-        <string>run</string>
-        <string>--directory</string>
+        <string>/usr/bin/make</string>
+        <string>-C</string>
         <string>__ROOT__</string>
-        <string>python</string>
-        <string>-m</string>
-        <string>garmin.sync</string>
+        <string>daily</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__ROOT__</string>

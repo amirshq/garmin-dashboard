@@ -77,3 +77,20 @@ remote-status:      ## where things stand
 	@launchctl print gui/$$(id -u)/$(LABEL) 2>/dev/null | grep -E "state =" | sed 's/^/sync job: /' || echo "sync job: not installed"
 	@curl -sf -o /dev/null http://127.0.0.1:8501/_stcore/health && echo "local health: ok" || echo "local health: DOWN"
 	@"$(TS)" serve status 2>/dev/null || echo "tailscale: not running / not installed"
+
+# ---------------------------------------------------------------- encrypted GitHub Pages snapshot
+.PHONY: snapshot publish daily pages-status
+
+snapshot:           ## build the encrypted static page into data/pages/ (plus an unencrypted local preview.html)
+	uv run python -m dashboard.snapshot --plain
+
+publish:            ## build + force-push the encrypted page to the gh-pages branch
+	uv run python -m dashboard.snapshot --publish
+
+daily:              ## what launchd runs at 06:00: sync, then publish if SNAPSHOT_PASSWORD is set
+	-uv run python -m garmin.sync
+	@if grep -qE '^SNAPSHOT_PASSWORD=.+' .env 2>/dev/null; then uv run python -m dashboard.snapshot --publish; \
+	 else echo "[daily] SNAPSHOT_PASSWORD not set; skipping GitHub Pages snapshot"; fi
+
+pages-status:       ## where GitHub Pages serves from
+	@gh api "repos/$$(gh repo view --json nameWithOwner -q .nameWithOwner)/pages" -q '"\(.html_url)  (branch \(.source.branch)\(.source.path))"'

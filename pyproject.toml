@@ -12,6 +12,7 @@ dependencies = [
     "plotly>=5.22",
     "pandas>=2.2",
     "mcp[cli]>=1.2",
+    "cryptography>=42",
 ]
 
 [dependency-groups]

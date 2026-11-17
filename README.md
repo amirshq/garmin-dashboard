@@ -111,6 +111,31 @@ make remote-status       # service, health check and serve status in one place
 - **Who can see it:** Tailscale `serve` (not `funnel`) only reaches devices signed in to your tailnet.
   Never use `tailscale funnel` for this; it would publish your health data to the internet.
 
+### Always-on link (encrypted GitHub Pages snapshot)
+
+GitHub Pages can only serve static files, so it can't run the Streamlit app. Instead, after each
+sync the Mac builds a static page (signals, KPIs, interactive charts, recent workouts and nights)
+and publishes it **encrypted** to the `gh-pages` branch:
+
+```
+SQLite ──► dashboard/snapshot.py ──► HTML ──gzip──► AES-256-GCM (PBKDF2-SHA256, 600k) ──► gh-pages/index.html
+```
+
+The public file holds only ciphertext and a password form. The browser decrypts it with WebCrypto, and
+"Remember on this device" stores the derived key (not the password) in that browser. **Lock** forgets it.
+
+```bash
+# 1. in .env (never committed): a long passphrase, 5+ random words
+SNAPSHOT_PASSWORD=...
+make snapshot         # local build: data/pages/index.html + unencrypted preview.html (never published)
+make publish          # build + force-push to gh-pages (one commit, no history of old snapshots)
+make install-schedule # 06:00 job now runs `make daily`: sync, then publish
+```
+
+Set GitHub → Settings → Pages → Source to **`gh-pages` / root** once.
+The data is only as fresh as the Mac's last sync. The page shows "data through …".
+To change the password, edit `.env` and run `make publish`. Devices that remembered the old key will ask again.
+
 ## 4. MCP server (Claude Desktop)
 
 The server is read-only over the local SQLite file. It never calls Garmin. Tools:
@@ -208,7 +233,7 @@ activity JSON (the `activity_ext` view), so it needs no extra API calls.
 ```
 garmin/      client.py (API + auth + retries) · models.py (pydantic) · sync.py · fit.py · config.py
 db/          schema.sql · db.py (connect, upsert)
-dashboard/   app.py
+dashboard/   app.py · views.py · ui.py · data.py · snapshot.py (encrypted GitHub Pages build)
 mcp_server/  server.py
 launchd/     sync.plist.template
 tests/       test_client.py · test_sync.py
