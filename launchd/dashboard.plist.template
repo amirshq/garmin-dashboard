@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: `make install-dashboard` fills in __ROOT__/__UV__/__LABEL__ and installs to ~/Library/LaunchAgents.
+     Always-on dashboard bound to 127.0.0.1 only; remote access goes through `tailscale serve`. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__UV__</string>
+        <string>run</string>
+        <string>--directory</string>
+        <string>__ROOT__</string>
+        <string>streamlit</string>
+        <string>run</string>
+        <string>dashboard/app.py</string>
+        <string>--server.headless</string>
+        <string>true</string>
+        <string>--server.address</string>
+        <string>127.0.0.1</string>
+        <string>--server.port</string>
+        <string>8501</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__ROOT__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>__ROOT__/logs/dashboard.log</string>
+    <key>StandardErrorPath</key>
+    <string>__ROOT__/logs/dashboard.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
