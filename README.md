@@ -233,7 +233,7 @@ activity JSON (the `activity_ext` view), so it needs no extra API calls.
 ```
 garmin/      client.py (API + auth + retries) · models.py (pydantic) · sync.py · fit.py · config.py
 db/          schema.sql · db.py (connect, upsert)
-dashboard/   app.py · views.py · ui.py · data.py · snapshot.py (encrypted GitHub Pages build)
+dashboard/   app.py · views.py · ui.py · data.py · snapshot.py + snapshot_hero.py + snapshot_assets/ (encrypted GitHub Pages build)
 mcp_server/  server.py
 launchd/     sync.plist.template
 tests/       test_client.py · test_sync.py

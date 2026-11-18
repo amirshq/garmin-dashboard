@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import base64
 import gzip
-import html
 import json
 import os
 import secrets
@@ -38,6 +37,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from plotly.offline import get_plotlyjs_version
 
 from dashboard import ui
+from dashboard.snapshot_hero import hero_data
 from garmin import config, insights
 
 DAYS = 365
@@ -245,27 +245,131 @@ def nights_table(sl: pd.DataFrame, hv: pd.DataFrame, ds: pd.DataFrame, n: int = 
 
 
 # ---------------------------------------------------------------- page
-PAGE_CSS = f"""
-<style>
-body {{ margin: 0; color: {ui.TEXT}; font-family: {ui.FONT}; -webkit-text-size-adjust: 100%; }}
-.wrap {{ max-width: 1480px; margin: 0 auto; padding: 18px 24px 48px; }}
-.top {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }}
-.rng {{ display: flex; gap: 6px; }}
-.rng button, .lock {{ background: transparent; border: 1px solid {ui.LINE}; color: {ui.TEXT_2}; font-family: {ui.MONO};
-    font-size: 12px; padding: 6px 12px; border-radius: 7px; cursor: pointer; }}
-.rng button[aria-pressed="true"] {{ background: {ui.ACCENT_BG}; color: {ui.ACCENT}; border-color: {ui.ACCENT}; }}
-.grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }}
-.card {{ background: {ui.CARD}; border: 1px solid {ui.LINE}; border-radius: 10px; padding: 14px 16px; min-width: 0; }}
-.card .chart {{ margin-top: 10px; }}
-.wide {{ grid-column: 1 / -1; }}
-.scroll {{ overflow-x: auto; margin-top: 6px; }}
-.foot {{ margin-top: 18px; font-family: {ui.MONO}; font-size: 11px; color: {ui.FAINT}; }}
-@media (max-width: 760px) {{
-  .wrap {{ padding: 12px 14px 40px; }}
-  .grid {{ grid-template-columns: 1fr; }}
-}}
-</style>
-"""
+ASSETS = Path(__file__).resolve().parent / "snapshot_assets"
+FONTS = ("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600"
+         "&family=Geist+Mono:wght@400;500&display=swap")
+SEV_ICON = {"critical": "▲", "warning": "●", "info": "◆", "good": "✓"}
+
+I_BOLT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="#ff8f4a" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>'
+I_MOON = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a99bff" stroke-width="2" stroke-linecap="round" '
+          'stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>')
+I_TARGET = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5fd6a8" stroke-width="2" aria-hidden="true">'
+            '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2" fill="#5fd6a8"/></svg>')
+I_HEART_LINE = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a99bff" stroke-width="2.2" stroke-linecap="round" '
+                'stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>')
+I_HEART = ('<svg width="20" height="20" viewBox="0 0 24 24" fill="#111" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 '
+           '3.6 1.1 4.4 2.6.8-1.5 2.3-2.6 4.4-2.6 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>')
+I_BELL = ('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e6e6ea" stroke-width="1.8" stroke-linecap="round" '
+          'stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>')
+I_EXPAND = ('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a9aa1" stroke-width="2" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>')
+I_CLOSE = ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e6e6ea" stroke-width="2.2" stroke-linecap="round" '
+           'aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>')
+I_SPARK = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="#c7bbff" aria-hidden="true"><path d="M12 2c.6 4.8 2.7 8.4 10 10-7.3 '
+           '1.6-9.4 5.2-10 10-.6-4.8-2.7-8.4-10-10 7.3-1.6 9.4-5.2 10-10z"/></svg>')
+I_AVATAR = ('<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c7bbff" stroke-width="1.8" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M9 3h6M9 21h6M12 9v3l2 1.5"/></svg>')
+
+
+def _alerts_html(alerts: list) -> tuple[str, str, int]:
+    """(strip, menu items, count of warnings+criticals)."""
+    esc = ui.esc
+    items = "".join(
+        f"<div class='mi tone-{a.severity}'><span class='ic'>{SEV_ICON[a.severity]}</span>"
+        f"<div><b>{esc(a.title)}</b><span class='d'>{esc(a.detail)}</span></div></div>" for a in alerts) \
+        or "<div class='mi'><div><b>No signals</b><span class='d'>Nothing stands out.</span></div></div>"
+    n_bad = sum(a.severity in ("critical", "warning") for a in alerts)
+    strip = ""
+    if alerts:
+        a = alerts[0]
+        more = f"<span class='more'>+{len(alerts) - 1} more</span>" if len(alerts) > 1 else ""
+        strip = (f"<button class='strip tone-{a.severity}' id='strip' aria-label='Show all signals'>"
+                 f"<span class='ic'>{SEV_ICON[a.severity]}</span><span class='t'><b>{esc(a.title)}</b> — {esc(a.detail)}</span>{more}</button>")
+    return strip, items, n_bad
+
+
+def _hero_html(hero: dict) -> str:
+    odo_cols = "".join("<div class='dcol'><div class='s'></div></div>" for _ in range(3))
+    matrix = []
+    for r in range(4):  # rows top -> bottom; a column lights up from the bottom to its level
+        for lv in hero["sleep"].get("matrix", [0] * 13):
+            lit = (3 - r) < lv
+            top = (3 - r) == lv - 1
+            matrix.append(f"<i class='{'lit' if lit else ''}{' top' if top else ''}' style='animation-delay:{(len(matrix) * .37) % 3:.2f}s'></i>")
+    stage_cols = [("Deep", "var(--deep)"), ("Light", "var(--light)"), ("REM", "var(--rem)"), ("Awake", "var(--awake)")]
+    stats = "".join(f"<div class='stat' id='st{i}'><div class='k'><i style='background:{c}'></i>{n}</div><div class='v'></div></div>"
+                    for i, (n, c) in enumerate(stage_cols))
+    stagebar = "".join(f"<i id='sb{i}' style='background:{c};width:0'></i>" for i, (_, c) in enumerate(stage_cols))
+    chip = hero["heart"]["chip"]
+    chip_cls = "on" if chip["tone"] == "good" else "amber" if chip["tone"] == "warn" else ""
+    insight = ui.esc(hero["sleep"].get("insight", ""))
+    return f"""
+<section class="hero" id="hero">
+ <div class="row r1">
+  <section class="card energy" aria-label="Body Battery">
+   <div class="tint" style="background:radial-gradient(420px 260px at 85% 90%,rgba(255,120,50,.10),transparent 70%)"></div>
+   <div class="chead"><div class="ico">{I_BOLT}</div>Body Battery</div>
+   <div class="ebody">
+    <div><div class="lbl" id="eLbl"></div>
+     <div class="odo" id="odo" aria-live="polite">{odo_cols}<span class="dash">—</span></div>
+     <div class="delta" id="eDelta"></div></div>
+    <div class="bars" id="bars"><div class="tip" id="tip"></div></div>
+   </div>
+  </section>
+  <section class="card sleep" id="sleep" aria-label="Sleep">
+   <div class="tint" style="background:radial-gradient(380px 300px at 80% 100%,rgba(143,124,247,.12),transparent 70%)"></div>
+   <div class="chead"><div class="ico">{I_MOON}</div>Sleep</div>
+   <button class="rbtn only-closed" id="sOpen" aria-expanded="false" aria-label="Expand sleep details">{I_EXPAND}</button>
+   <button class="rbtn only-open" id="sClose" aria-label="Close sleep details">{I_CLOSE}</button>
+   <div class="total" id="sTotal"></div>
+   <div class="lbl only-closed" id="sLine" style="margin-top:10px"></div>
+   <div class="lbl only-open" id="sWindow" style="margin-top:10px"></div>
+   <div class="only-closed"><div class="matrix" aria-hidden="true">{''.join(matrix)}</div>
+     <div class="mcap">LAST 13 NIGHTS · SCORE</div></div>
+   <div class="stats only-open">{stats}</div>
+   <div class="only-open"><div class="lbl" id="sLabel" style="margin-top:22px"></div>
+     <div class="stagebar" aria-hidden="true">{stagebar}</div>
+     <div class="trend"><div class="cap" style="margin-top:22px">Sleep score · last 30 nights</div>
+       <svg id="trendSvg" height="200" role="img" aria-label="Sleep score over the last 30 nights"></svg>
+       <div class="tt" id="trendTip"></div></div></div>
+   <div class="insight">{I_SPARK}<span>{insight}</span></div>
+  </section>
+ </div>
+ <div class="row r2">
+  <section class="card activity" aria-label="Activity">
+   <div class="tint" style="background:radial-gradient(360px 260px at 20% 80%,rgba(95,214,168,.10),transparent 70%)"></div>
+   <div class="chead"><div class="ico">{I_TARGET}</div>Activity</div>
+   <div class="abody">
+    <div class="ringbox">
+     <svg width="176" height="176" viewBox="0 0 176 176" aria-hidden="true">
+      <defs><filter id="rglow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+      <circle cx="88" cy="88" r="76" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>
+      <circle class="ring-g" cx="88" cy="88" r="76" fill="none" stroke="#5fd6a8" stroke-width="10" stroke-linecap="round" transform="rotate(-90 88 88)" filter="url(#rglow)" opacity=".45" stroke-dasharray="0 478"/>
+      <circle class="ring" cx="88" cy="88" r="76" fill="none" stroke="#5fd6a8" stroke-width="10" stroke-linecap="round" transform="rotate(-90 88 88)" stroke-dasharray="0 478"/>
+      <circle class="rdot" r="12" fill="#9ff0cf" filter="url(#rglow)" cx="88" cy="12" opacity="0"/>
+      <circle class="rdot" r="5.5" fill="#fff" cx="88" cy="12" opacity="0"/>
+     </svg>
+     <div class="rtxt" id="aVal"></div><div class="rlbl" id="aOf"></div>
+    </div>
+    <div style="min-width:0">
+     <div class="chip" id="aChip"><span class="dot"></span><span id="aChipT"></span></div>
+     <div class="atitle" id="aTitle"></div><div class="asub" id="aSub"></div>
+     <button class="pillbtn" id="aGo">Workouts <span aria-hidden="true">↓</span></button>
+    </div>
+   </div>
+  </section>
+  <section class="card heart" aria-label="Heart">
+   <div class="tint" style="background:radial-gradient(380px 220px at 60% 45%,rgba(143,124,247,.10),transparent 70%)"></div>
+   <div class="chead"><div class="ico">{I_HEART_LINE}</div>Heart</div>
+   <div class="status"><span class="chip {chip_cls}"><span class="dot"></span>{ui.esc(chip['text'])}</span></div>
+   <div class="wave" id="wave" aria-hidden="true">{'<i class="wb"></i>' * 36}</div>
+   <div class="wcap" id="wCap"></div>
+   <div class="hrow"><div class="hbtn">{I_HEART}</div>
+    <div style="min-width:0"><div class="htitle" id="hTitle"></div><div class="hsub" id="hSub"></div></div>
+    <div class="hright" id="hRight"></div></div>
+  </section>
+ </div>
+</section>"""
 
 
 def build_html(conn: sqlite3.Connection, today: date | None = None) -> str:
@@ -275,7 +379,7 @@ def build_html(conn: sqlite3.Connection, today: date | None = None) -> str:
         raise SystemExit("No data in the database yet — run `make sync` first.")
     end = date.fromisoformat(end_s)
     start = end - timedelta(days=DAYS - 1)
-    lead = (start - timedelta(days=13)).isoformat()  # extra days so 7-day averages and deltas are valid
+    lead = (start - timedelta(days=13)).isoformat()  # extra days so 7-day averages are valid at the left edge
     S, E = start.isoformat(), end.isoformat()
 
     ds = _df(conn, "SELECT * FROM daily_summary WHERE calendar_date BETWEEN ? AND ? ORDER BY calendar_date", (lead, E))
@@ -293,34 +397,10 @@ def build_html(conn: sqlite3.Connection, today: date | None = None) -> str:
                    "WHERE fitness_age IS NOT NULL ORDER BY as_of_date")
     load = pd.DataFrame(insights.training_load(conn, end, DAYS))
     alerts = insights.compute_alerts(conn, today)
+    hero = hero_data(conn, end)
 
     all_types = [r[0] for r in conn.execute("SELECT type_key FROM activity GROUP BY 1 ORDER BY count(*) DESC LIMIT 5")]
     colors = {t: ui.SERIES[i] for i, t in enumerate(all_types)}  # fixed order over all history, never by range rank
-
-    # -- KPIs (latest value, 7-day avg vs the 7 days before)
-    def kpi(label, s, unit, better, fmt=".0f", color=ui.ACCENT, value_fmt=None, spark_n=30):
-        cur, prev = _avg(s, 7), _avg(s, 7, 7)
-        foot, cls = _delta(cur, prev, f" {unit}".rstrip(), better, fmt)
-        v = _last(s)
-        value = value_fmt(v) if value_fmt and v is not None else ui.num(v, fmt)
-        return ui.Kpi(label, value, unit if not value_fmt else "", foot, cls, s.dropna().tail(spark_n).tolist(), color)
-
-    acwr = _last(load["acwr"]) if len(load) else None
-    hrv_status = (_last(hv["status"]) or "").lower()
-    kpis = [
-        kpi("Resting HR", ds["rhr_bpm"], "bpm", "down", color=ui.SERIES[1]),
-        kpi("HRV · last night", hv["last_night_avg_ms"], "ms", "up", color=ui.SERIES[0]),
-        kpi("Sleep", sl["sleep_s"] / 3600, "", "up", fmt=".1f", color=ui.SERIES[5], value_fmt=ui.hm),
-        kpi("Sleep score", sl["sleep_score"], "", "up", color=ui.SERIES[5]),
-        kpi("Steps", ds["steps"], "", "up", fmt=",.0f", color=ui.SERIES[0]),
-        kpi("Body Battery peak", ds["bb_max"], "", "up", color=ui.SERIES[2]),
-        kpi("Stress avg", ds["stress_avg"], "", "down", color=ui.SERIES[3]),
-        ui.Kpi("Load ratio", ui.num(acwr, ".2f"), "×", "acute 7d ÷ chronic weekly · 0.8–1.3 is steady",
-               "c-muted", load["acwr"].dropna().tail(30).tolist() if len(load) else None, ui.SERIES[1],
-               "warn" if acwr and acwr >= 1.5 else ""),
-    ]
-    if hrv_status:
-        kpis[1].foot = f"status {ui.esc(hrv_status)} · " + kpis[1].foot
 
     vis = lambda df, col="calendar_date": df[df[col] >= S]  # noqa: E731
     figs: dict[str, go.Figure] = {
@@ -345,71 +425,66 @@ def build_html(conn: sqlite3.Connection, today: date | None = None) -> str:
         ("load", "Training load", "acute 7-day vs chronic weekly", ""),
         ("volume", "Weekly volume", "hours by activity type", "wide"),
     ]
-    body_figs = []
     if len(w) >= 2:
         figs["weight"] = fig_weight(w)
-        body_figs.append(("weight", "Weight", f"{len(w)} weigh-ins", ""))
+        panels.append(("weight", "Weight", f"{len(w)} weigh-ins", ""))
     if len(fa) >= 2:
         figs["fa"] = fig_fitness_age(fa)
-        body_figs.append(("fa", "Fitness Age", "vs actual age", ""))
+        panels.append(("fa", "Fitness Age", "vs actual age", ""))
     date_figs = [k for k in figs if k not in ("weight", "fa")]  # these keep their full history
-
     for k in date_figs:
         figs[k].update_xaxes(range=[(end - timedelta(days=DEFAULT_RANGE - 1)).isoformat(),
                                     (end + timedelta(hours=12)).isoformat()])
 
     def card(key, title, sub, cls):
-        return (f"<section class='card {cls}'>{ui.panel_header(title, sub)}"
+        return (f"<section class='card {cls}'><div class='ch'>{ui.esc(title)}<span>{ui.esc(sub)}</span></div>"
                 f"<div class='chart' id='c-{key}'></div></section>")
 
     fig_json = {k: json.loads(f.to_json()) for k, f in figs.items()}
-    built = datetime.now().strftime("%Y-%m-%d %H:%M")
-    ranges = "".join(f"<button data-days='{d}' aria-pressed='{str(d == DEFAULT_RANGE).lower()}'>{label}</button>"
-                     for d, label in ((30, "30D"), (90, "90D"), (365, "1Y")))
+    strip, menu_items, n_bad = _alerts_html(alerts)
+    badge = "<span class='badge-ring'></span><span class='badge'></span>" if n_bad else ""
+    built = datetime.now().strftime("%-d %b %H:%M")
+    js_data = (f"const HERO = {json.dumps(hero, separators=(',', ':'))};\n"
+               f"const FIGS = {json.dumps(fig_json, separators=(',', ':'))};\n"
+               f"const DATE_FIGS = {json.dumps(date_figs)};\nconst END = {json.dumps(E)};\n")
+    css = (ASSETS / "page.css").read_text()
+    js = (ASSETS / "page.js").read_text()
+    views = "".join(f"<button role='tab' data-v='{v}'>{v.title()}</button>" for v in ("today", "week", "month"))
+    ranges = "".join(f"<button role='tab' data-v='{d}'>{lab}</button>" for d, lab in ((30, "30D"), (90, "90D"), (365, "1Y")))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#09090a">
 <title>Health snapshot</title>
-{ui.CSS}{PAGE_CSS}
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="{FONTS}" rel="stylesheet">
+<style>{css}</style>
 <script src="{PLOTLY_JS}"></script>
-</head><body><div class="wrap">
-<div class="top">
-  {ui.page_header("Health snapshot", f"data through {E} · built {built}")}
-  <div class="rng">{ranges}<button class="lock" id="lock" title="Forget the password on this device">Lock</button></div>
+</head><body><div class="app">
+<header class="hdr">
+ <div class="who"><div class="avatar">{I_AVATAR}</div>
+  <div><div class="hello" id="hello">Hello</div><div class="date">Data through {ui.esc(hero['end_label'])} · built {built}</div></div></div>
+ <div class="hdr-r">
+  <div class="switch" id="viewSwitch" role="tablist" aria-label="Period"><div class="ind"></div>{views}</div>
+  <button class="bell" id="bell" aria-label="Signals ({len(alerts)})" aria-expanded="false" aria-controls="menu">{I_BELL}{badge}</button>
+  <div class="menu" id="menu" role="dialog" aria-label="Signals">{menu_items}
+   <button class="mi lock" id="lock">Lock — forget the password on this device</button></div>
+ </div>
+</header>
+{strip}
+{_hero_html(hero)}
+<div class="sec"><h2>Trends<small>through {ui.esc(E)}</small></h2>
+ <div class="switch sm" id="rangeSwitch" role="tablist" aria-label="Chart range"><div class="ind"></div>{ranges}</div></div>
+<div class="grid">{''.join(card(*p) for p in panels)}</div>
+<div class="sec" id="workouts"><h2>Recent workouts<small>{len(acts)} in the last year</small></h2></div>
+<section class="card" style="padding:14px 18px"><div class="scroll">{workouts_table(acts, colors)}</div></section>
+<div class="sec"><h2>Recent nights<small>sleep, HRV and resting HR</small></h2></div>
+<section class="card" style="padding:14px 18px"><div class="scroll">{nights_table(vis(sl), hv, ds)}</div></section>
+<div class="foot">Encrypted snapshot of your local Garmin dashboard · regenerated after each daily sync · not medical advice</div>
 </div>
-{ui.alert_banner(alerts, "Signals")}
-{ui.kpi_grid(kpis)}
-<div class="grid">
-{''.join(card(*p) for p in panels)}
-{''.join(card(*p) for p in body_figs)}
-<section class="card wide">{ui.panel_header("Recent workouts", f"{len(acts)} in the last year")}
-  <div class="scroll">{workouts_table(acts, colors)}</div></section>
-<section class="card wide">{ui.panel_header("Recent nights", "sleep, HRV and resting HR")}
-  <div class="scroll">{nights_table(vis(sl), hv, ds)}</div></section>
-</div>
-<div class="foot">Static snapshot of the local Garmin dashboard · regenerated after each daily sync · not medical advice</div>
-</div>
-<script>
-const FIGS = {json.dumps(fig_json, separators=(",", ":"))};
-const DATE_FIGS = {json.dumps(date_figs)};
-const END = "{E}";
-const CFG = {{displayModeBar: false, responsive: true}};
-for (const [k, f] of Object.entries(FIGS)) Plotly.newPlot("c-" + k, f.data, f.layout, CFG);
-function setRange(days) {{
-  const e = new Date(END + "T12:00:00"), s = new Date(e);
-  s.setDate(s.getDate() - days + 1); s.setHours(0);
-  const iso = d => d.toISOString().slice(0, 13).replace("T", " ") + ":00";
-  for (const k of DATE_FIGS) Plotly.relayout("c-" + k, {{"xaxis.range": [iso(s), iso(e)]}});
-  document.querySelectorAll(".rng button[data-days]").forEach(b =>
-    b.setAttribute("aria-pressed", String(+b.dataset.days === days)));
-}}
-document.querySelectorAll(".rng button[data-days]").forEach(b => b.onclick = () => setRange(+b.dataset.days));
-document.getElementById("lock").onclick = () => {{
-  try {{ Object.keys(localStorage).filter(k => k.startsWith("gd-key")).forEach(k => localStorage.removeItem(k)); }} catch (e) {{}}
-  location.reload();
-}};
-</script>
+<script>{js_data}</script>
+<script>{js}</script>
 </body></html>"""
 
 
